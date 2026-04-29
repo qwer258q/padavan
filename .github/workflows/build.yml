@@ -14,19 +14,19 @@ jobs:
         target: [K2P]
         toolchain: [mipsel-linux-musl]
     steps:
-      - uses: actions/checkout@v4 # 顺便更新到 v4
+      - uses: actions/checkout@v4
 
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.target }}-${{ matrix.toolchain }}
 
-      - uses: actions/setup-go@v5 # 更新到 v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.20'
           check-latest: true
           cache: false
 
-      - uses: actions/setup-node@v4 # 更新到 v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
           check-latest: true
@@ -38,13 +38,14 @@ jobs:
 
       - name: Configure and Patch
         run: |
-          # 覆盖配置文件到源码目录
-          cp -f K2P.config trunk/configs/templates/${{ matrix.target }}.config
-          
-          # 强制禁用 htop 插件，防止编译中断
+          # 因为你已经把 K2P.config 放在了 trunk/configs/templates/ 下
+          # 所以我们不需要 cp 命令，直接进入 trunk 目录进行最后的修正即可
           cd trunk
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTOP=y/CONFIG_FIRMWARE_INCLUDE_HTOP=n/' .config || true
+          
+          # 强制禁用可能导致报错的 htop (双重保险)
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTOP=y/CONFIG_FIRMWARE_INCLUDE_HTOP=n/' configs/templates/${{ matrix.target }}.config
+          
+          # 这一行确保编译脚本读取正确的 target
           echo "CONFIG_FIRMWARE_INCLUDE_HTOP=n" >> .config
 
       - name: Build
@@ -59,7 +60,7 @@ jobs:
           done
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4 # 关键点：升级到 v4
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}-${{ matrix.toolchain }}
           path: trunk/images/*.trx
@@ -72,9 +73,9 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Download Artifact
-        uses: actions/download-artifact@v4 # 关键点：升级到 v4
+        uses: actions/download-artifact@v4
         with:
-          name: K2P-mipsel-linux-musl # 显式指定要下载的 artifact 名称
+          name: K2P-mipsel-linux-musl
 
       - name: Set Tag Name
         run: echo "TAG_NAME=$(date +%Y%m%d)" >> $GITHUB_ENV
@@ -88,5 +89,5 @@ jobs:
         with:
           commit: ${{ github.sha }}
           tag: ${{ env.TAG_NAME }}
-          artifacts: "*.trx" # v4 下载后文件直接在当前目录或指定目录
+          artifacts: "*.trx"
           allowUpdates: true
