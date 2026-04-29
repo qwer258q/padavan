@@ -11,53 +11,74 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        target: [K2P, K2P-NANO, K2P-USB]
+        target: [K2P]
         toolchain: [mipsel-linux-musl]
     steps:
       - uses: actions/checkout@v3
+
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.target }}-${{ matrix.toolchain }}
+
       - uses: actions/setup-go@v4
         with:
           go-version: '1.20'
           check-latest: true
           cache: false
+
       - uses: actions/setup-node@v3
         with:
           node-version: 18
           check-latest: true
+
       - name: Prepare
         run: |
           sudo apt update
           sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache
+
+      - name: Configure and Patch
+        run: |
+          # 覆盖配置文件到源码目录
+          cp -f K2P.config trunk/configs/templates/${{ matrix.target }}.config
+          
+          # 强制禁用 htop 插件，防止编译中断
+          cd trunk
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTOP=y/CONFIG_FIRMWARE_INCLUDE_HTOP=n/' .config || true
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTOP=y/CONFIG_FIRMWARE_INCLUDE_HTOP=n/' configs/templates/${{ matrix.target }}.config
+          echo "CONFIG_FIRMWARE_INCLUDE_HTOP=n" >> .config
+
       - name: Build
         run: |
           make ${{ matrix.target }} TOOLCHAIN=${{ matrix.toolchain }}
-          if [ "${{ matrix.target }}" = "K2P-NANO" ]; then
-            image=$(ls trunk/images/*.trx)
-            mv $image $(echo $image | sed 's/K2P/K2P-NANO/')
-          fi
+
+      - name: Rename Image
+        run: |
+          cd trunk/images
+          for img in *.trx; do
+            mv "$img" "${{ matrix.target }}_$(date +%Y%m%d)_$img"
+          done
+
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.toolchain }}
+          name: ${{ matrix.target }}-${{ matrix.toolchain }}
           path: trunk/images/*.trx
+
   publish:
     needs: [build]
     runs-on: ubuntu-22.04
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v3
       - uses: actions/download-artifact@v3
       - name: Set Tag Name
-        run: echo "TAG_ANME=$(date +%Y%m%d)" >> $GITHUB_ENV
+        run: echo "TAG_NAME=$(date +%Y%m%d)" >> $GITHUB_ENV
       - uses: rickstaa/action-create-tag@v1
         with:
-          tag: ${{ env.TAG_ANME }}
+          tag: ${{ env.TAG_NAME }}
           force_push_tag: true
       - uses: ncipollo/release-action@v1
         with:
           commit: ${{ github.sha }}
-          tag: ${{ env.TAG_ANME }}
-          artifacts: "mipsel-linux-musl/*.trx"
+          tag: ${{ env.TAG_NAME }}
+          artifacts: "**/*.trx"
           allowUpdates: true
