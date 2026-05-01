@@ -38,15 +38,11 @@ jobs:
 
       - name: Configure and Patch
         run: |
-          # 因为你已经把 K2P.config 放在了 trunk/configs/templates/ 下
-          # 所以我们不需要 cp 命令，直接进入 trunk 目录进行最后的修正即可
           cd trunk
-          
-          # 强制禁用可能导致报错的 htop (双重保险)
+          # 强制禁用 htop 和其他冗余，确保配置生效
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTOP=y/CONFIG_FIRMWARE_INCLUDE_HTOP=n/' configs/templates/${{ matrix.target }}.config
-          
-          # 这一行确保编译脚本读取正确的 target
           echo "CONFIG_FIRMWARE_INCLUDE_HTOP=n" >> .config
+          make oldconfig
 
       - name: Build
         run: |
@@ -71,20 +67,16 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-      
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: K2P-mipsel-linux-musl
-
       - name: Set Tag Name
         run: echo "TAG_NAME=$(date +%Y%m%d)" >> $GITHUB_ENV
-
       - uses: rickstaa/action-create-tag@v1
         with:
           tag: ${{ env.TAG_NAME }}
           force_push_tag: true
-
       - uses: ncipollo/release-action@v1
         with:
           commit: ${{ github.sha }}
