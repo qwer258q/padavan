@@ -19,22 +19,13 @@ jobs:
       - name: Build Firmware
         run: |
           cd trunk
-          
-          # 【绝招 1】：强行把你的 K2P.config 复制并重命名为 .config
-          cp -f configs/templates/K2P.config .config
-          
-          # 【绝招 2】：带上确定的工具链参数，强行启动编译
-          make K2P TOOLCHAIN=mipsel-linux-musl
-
-      - name: Rename Image
-        run: |
-          cd trunk/images
-          # 给编译出来的固件加个日期标签，方便你认
-          for img in *.trx; do
-            mv "$img" "K2P_$(date +%Y%m%d)_$img"
-          done
+          # 1. 绝招：手动将模板复制为 .config
+          cp configs/templates/K2P.config .config
+          # 2. 直接执行 make，系统会自动读取 .config 进行编译
+          make
 
       - name: Upload Firmware
+        # 升级为 v4 版本，解决 Deprecation 报错
         uses: actions/upload-artifact@v4
         with:
           name: K2P-Firmware
