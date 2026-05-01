@@ -14,18 +14,26 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo apt update
-          sudo apt install -y libtool-bin gperf python3-docutils autopoint gettext ccache
+          sudo apt install -y libtool-bin gperf python3-docutils autopoint gettext ccache build-essential
+
+      - name: Build Toolchain
+        run: |
+          # 编译工具链，这是将 PC 代码转为 K2P 代码的翻译官
+          cd toolchain-mipsel
+          ./clean_toolchain
+          ./build_toolchain
 
       - name: Build Firmware
         run: |
           cd trunk
-          # 1. 绝招：手动将模板复制为 .config
+          # 确保配置文件存在
           cp configs/templates/K2P.config .config
-          # 2. 直接执行 make，系统会自动读取 .config 进行编译
-          make
+          # 强制指定编译器路径并编译
+          # 如果报错，说明你的源码需要指定编译器路径，通常是下面这个
+          export PATH=$PATH:/opt/build_mipsel/toolchain-mipsel/bin
+          make K2P
 
       - name: Upload Firmware
-        # 升级为 v4 版本，解决 Deprecation 报错
         uses: actions/upload-artifact@v4
         with:
           name: K2P-Firmware
