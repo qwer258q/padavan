@@ -19,8 +19,20 @@ jobs:
       - name: Build Firmware
         run: |
           cd trunk
-          # 直接编译 K2P，系统会自动读取 configs/templates/K2P.config
-          make K2P
+          
+          # 【绝招 1】：强行把你的 K2P.config 复制并重命名为 .config
+          cp -f configs/templates/K2P.config .config
+          
+          # 【绝招 2】：带上确定的工具链参数，强行启动编译
+          make K2P TOOLCHAIN=mipsel-linux-musl
+
+      - name: Rename Image
+        run: |
+          cd trunk/images
+          # 给编译出来的固件加个日期标签，方便你认
+          for img in *.trx; do
+            mv "$img" "K2P_$(date +%Y%m%d)_$img"
+          done
 
       - name: Upload Firmware
         uses: actions/upload-artifact@v4
