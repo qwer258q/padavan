@@ -2,39 +2,96 @@ name: build
 
 on: 
   push:
-    branches: ["*"]
+    branches:
+      - "*"
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        target: [K2P]
+        toolchain: [mipsel-linux-musl]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare Environment
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.target }}-${{ matrix.toolchain }}
+
+      # 保持你原有的 Node/Go 环境配置
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20'
+          check-latest: true
+          cache: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          check-latest: true
+
+      - name: Prepare
         run: |
           sudo apt update
           sudo apt install -y libtool-bin gperf python3-docutils autopoint gettext ccache build-essential
 
-      - name: Build Toolchain
-        run: |
-          # 编译工具链，这是将 PC 代码转为 K2P 代码的翻译官
-          cd toolchain-mipsel
-          ./clean_toolchain
-          ./build_toolchain
-
-      - name: Build Firmware
+      - name: Configure and Patch
         run: |
           cd trunk
-          # 确保配置文件存在
-          cp configs/templates/K2P.config .config
-          # 强制指定编译器路径并编译
-          # 如果报错，说明你的源码需要指定编译器路径，通常是下面这个
-          export PATH=$PATH:/opt/build_mipsel/toolchain-mipsel/bin
-          make K2P
+          # 【关键修正】：必须先复制配置，否则 make 会报错
+          cp configs/templates/${{ matrix.target }}.config .config
+          
+          # 对 .config 进行打补丁 (禁用不需要的功能)
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTOP=y/CONFIG_FIRMWARE_INCLUDE_HTOP=n/' .config
+          
+          # 确保脚本读取正确的 target 参数
+          echo "CONFIG_FIRMWARE_INCLUDE_HTOP=n" >> .config
 
-      - name: Upload Firmware
+      - name: Build
+        run: |
+          cd trunk
+          # 运行编译命令
+          make ${{ matrix.target }}
+
+      - name: Rename Image
+        run: |
+          cd trunk/images
+          for img in *.trx; do
+            mv "$img" "${{ matrix.target }}_$(date +%Y%m%d)_$img"
+          done
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: K2P-Firmware
+          name: ${{ matrix.target }}-${{ matrix.toolchain }}
           path: trunk/images/*.trx
+
+  publish:
+    needs: [build]
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: K2P-mipsel-linux-musl
+          path: ./
+
+      - name: Set Tag Name
+        run: echo "TAG_NAME=$(date +%Y%m%d)" >> $GITHUB_ENV
+
+      - uses: rickstaa/action-create-tag@v1
+        with:
+          tag: ${{ env.TAG_NAME }}
+          force_push_tag: true
+
+      - uses: ncipollo/release-action@v1
+        with:
+          commit: ${{ github.sha }}
+          tag: ${{ env.TAG_NAME }}
+          artifacts: "*.trx"
+          allowUpdates: true
