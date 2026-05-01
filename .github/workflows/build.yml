@@ -2,84 +2,28 @@ name: build
 
 on: 
   push:
-    branches:
-    - "*"
+    branches: ["*"]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        target: [K2P]
-        toolchain: [mipsel-linux-musl]
     steps:
       - uses: actions/checkout@v4
 
-      - uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: ${{ matrix.target }}-${{ matrix.toolchain }}
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.20'
-          check-latest: true
-          cache: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          check-latest: true
-
-      - name: Prepare
+      - name: Prepare Environment
         run: |
           sudo apt update
-          sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache
+          sudo apt install -y libtool-bin gperf python3-docutils autopoint gettext ccache
 
-      - name: Configure and Patch
+      - name: Build Firmware
         run: |
           cd trunk
-          # 强制禁用 htop 和其他冗余，确保配置生效
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTOP=y/CONFIG_FIRMWARE_INCLUDE_HTOP=n/' configs/templates/${{ matrix.target }}.config
-          echo "CONFIG_FIRMWARE_INCLUDE_HTOP=n" >> .config
-          make oldconfig
+          # 直接编译 K2P，系统会自动读取 configs/templates/K2P.config
+          make K2P
 
-      - name: Build
-        run: |
-          make ${{ matrix.target }} TOOLCHAIN=${{ matrix.toolchain }}
-
-      - name: Rename Image
-        run: |
-          cd trunk/images
-          for img in *.trx; do
-            mv "$img" "${{ matrix.target }}_$(date +%Y%m%d)_$img"
-          done
-
-      - name: Upload Artifact
+      - name: Upload Firmware
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}-${{ matrix.toolchain }}
+          name: K2P-Firmware
           path: trunk/images/*.trx
-
-  publish:
-    needs: [build]
-    runs-on: ubuntu-22.04
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: K2P-mipsel-linux-musl
-      - name: Set Tag Name
-        run: echo "TAG_NAME=$(date +%Y%m%d)" >> $GITHUB_ENV
-      - uses: rickstaa/action-create-tag@v1
-        with:
-          tag: ${{ env.TAG_NAME }}
-          force_push_tag: true
-      - uses: ncipollo/release-action@v1
-        with:
-          commit: ${{ github.sha }}
-          tag: ${{ env.TAG_NAME }}
-          artifacts: "*.trx"
-          allowUpdates: true
