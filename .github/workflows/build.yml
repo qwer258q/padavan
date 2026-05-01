@@ -3,7 +3,7 @@ name: build
 on: 
   push:
     branches:
-      - "*"
+    - "*"
   workflow_dispatch:
 
 jobs:
@@ -20,7 +20,6 @@ jobs:
         with:
           key: ${{ matrix.target }}-${{ matrix.toolchain }}
 
-      # 保持你原有的 Node/Go 环境配置
       - uses: actions/setup-go@v5
         with:
           go-version: '1.20'
@@ -35,25 +34,23 @@ jobs:
       - name: Prepare
         run: |
           sudo apt update
-          sudo apt install -y libtool-bin gperf python3-docutils autopoint gettext ccache build-essential
+          sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache
 
       - name: Configure and Patch
         run: |
+          # 因为你已经把 K2P.config 放在了 trunk/configs/templates/ 下
+          # 所以我们不需要 cp 命令，直接进入 trunk 目录进行最后的修正即可
           cd trunk
-          # 【关键修正】：必须先复制配置，否则 make 会报错
-          cp configs/templates/${{ matrix.target }}.config .config
           
-          # 对 .config 进行打补丁 (禁用不需要的功能)
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTOP=y/CONFIG_FIRMWARE_INCLUDE_HTOP=n/' .config
+          # 强制禁用可能导致报错的 htop (双重保险)
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTOP=y/CONFIG_FIRMWARE_INCLUDE_HTOP=n/' configs/templates/${{ matrix.target }}.config
           
-          # 确保脚本读取正确的 target 参数
+          # 这一行确保编译脚本读取正确的 target
           echo "CONFIG_FIRMWARE_INCLUDE_HTOP=n" >> .config
 
       - name: Build
         run: |
-          cd trunk
-          # 运行编译命令
-          make ${{ matrix.target }}
+          make ${{ matrix.target }} TOOLCHAIN=${{ matrix.toolchain }}
 
       - name: Rename Image
         run: |
@@ -79,7 +76,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: K2P-mipsel-linux-musl
-          path: ./
 
       - name: Set Tag Name
         run: echo "TAG_NAME=$(date +%Y%m%d)" >> $GITHUB_ENV
